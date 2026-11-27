@@ -1,5 +1,6 @@
 using IoTTelemetryLab.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace IoTTelemetryLab.Data;
 
@@ -10,7 +11,12 @@ public class AppDbContext : DbContext
 
     protected override void OnConfiguring(DbContextOptionsBuilder options)
     {
-        options.UseSqlite("Data Source=iot_telemetry.db");
+        var dbPath = Path.Combine(AppContext.BaseDirectory, "iot_telemetry.db");
+
+        options.UseSqlite($"Data Source={dbPath}")
+               .LogTo(SqlCommandCounter.OnLog,
+                      new[] { DbLoggerCategory.Database.Command.Name },
+                      LogLevel.Information);
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

@@ -7,28 +7,22 @@ public static class DeviceSeeder
 {
     public static readonly string[] Sources = { "вентилятор", "двигун", "фон" };
 
-    public static int SeedDevice(
-        AppDbContext context, string deviceName, int readingCount, double minValue, double maxValue)
+    public static async Task<int> SeedAsync(ITelemetryRepository repository, string deviceName,
+        int readingCount, double minValue, double maxValue, CancellationToken ct = default)
     {
-        var device = new Device { Name = deviceName };
-        context.Devices.Add(device);
-        context.SaveChanges();
+        var device = await repository.AddDeviceAsync(deviceName, ct);
 
-        var rawData = TelemetryGenerator.GenerateRawBatch(deviceName, readingCount, minValue, maxValue);
-        var cleaned = TelemetryCleaner.RemoveInvalid(rawData);
+        var raw = TelemetryGenerator.GenerateRawBatch(deviceName, readingCount, minValue, maxValue);
+        var cleaned = TelemetryCleaner.RemoveInvalid(raw).ToList();
 
-        foreach (var reading in cleaned)
+        var records = cleaned.Select(r => new TelemetryRecord
         {
-            device.Records.Add(new TelemetryRecord
-            {
-                Value = reading.Value,
-                Timestamp = reading.Timestamp,
-                DeviceId = device.Id,
-                Source = Sources[Random.Shared.Next(Sources.Length)]
-            });
-        }
+            Value = r.Value,
+            Timestamp = r.Timestamp,
+            Source = Sources[Random.Shared.Next(Sources.Length)]
+        }).ToList();
 
-        context.SaveChanges();
-        return device.Records.Count;
+        await repository.AddReadingsAsync(device.Id, records, ct);
+        return records.Count;
     }
 }

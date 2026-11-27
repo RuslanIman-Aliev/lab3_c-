@@ -1,48 +1,58 @@
 using System.Text;
 using IoTTelemetryLab.Data;
-using IoTTelemetryLab.Demos;
-using IoTTelemetryLab.Scenarios;
 using Microsoft.EntityFrameworkCore;
 
 Console.InputEncoding = Encoding.UTF8;
 Console.OutputEncoding = Encoding.UTF8;
 
-using (var context = new AppDbContext())
+const int ReadingCount = 50;
+const double MinValue = 30;
+const double MaxValue = 120;
+
+using var context = new AppDbContext();
+ITelemetryRepository repository = new TelemetryRepository(context);
+
+await context.Database.MigrateAsync();
+
+// === Наповнення (лише якщо база порожня) ===
+if ((await repository.GetAllDevicesAsync()).Count == 0)
 {
-    context.Database.Migrate();
-}
-
-while (true)
-{
-    Console.WriteLine("\n==================================================");
-    Console.WriteLine(" IoTTelemetryLab — ЛР3, варіант 5 (рівень шуму, дБ)");
-    Console.WriteLine("==================================================");
-    Console.WriteLine("  1 - Наповнення бази (Крок 5, Create)");
-    Console.WriteLine("  2 - Перегляд сенсорів і показів (Крок 6, Read)");
-    Console.WriteLine("  3 - Перейменування сенсора (Крок 7.1, Update)");
-    Console.WriteLine("  4 - Видалення сенсора (Крок 7.2, Delete + каскад)");
-    Console.WriteLine("  5 - Видалення показів за умовою (Крок 7.3, Delete)");
-    Console.WriteLine($"  6 - Індивідуальний запит: % показів > {LabSettings.LoudThreshold} дБ за джерелом (Крок 10)");
-    Console.WriteLine("  7 - Демонстрація ЛР1/ЛР2 (без бази даних)");
-    Console.WriteLine("  0 - Вихід");
-
-    var choice = ConsoleInput.ReadLine("Оберіть пункт: ");
-    Console.WriteLine();
-
-    switch (choice)
+    foreach (var name in new[] { "sensor-07", "sensor-12", "sensor-19" })
     {
-        case "1": SeedScenario.Run(); break;
-        case "2": ReadScenario.Run(); break;
-        case "3": UpdateScenario.Run(); break;
-        case "4": DeleteDeviceScenario.Run(); break;
-        case "5": DeleteRecordsScenario.Run(); break;
-        case "6": SourceQueryScenario.Run(); break;
-        case "7": Lab2Demo.Run(); break;
-        case "0":
-        case "":
-            return;
-        default:
-            Console.WriteLine("Невідомий пункт меню.");
-            break;
+        var saved = await DeviceSeeder.SeedAsync(repository, name, ReadingCount, MinValue, MaxValue);
+        Console.WriteLine($"Створено '{name}'. Згенеровано: {ReadingCount}, збережено: {saved}");
     }
 }
+
+// === Демонстрація 1: N+1 ===
+Console.WriteLine("\n--- N+1 ---");
+SqlCommandCounter.Reset();
+var devices = await repository.GetAllDevicesAsync();
+foreach (var d in devices)
+{
+    var count = await repository.CountRecordsAsync(d.Id);
+    Console.WriteLine($"  {d.Name}: {count}");
+}
+Console.WriteLine($"  SQL-команд: {SqlCommandCounter.Count}");
+
+// === Демонстрація 2: проєкція ===
+Console.WriteLine("\n--- Проєкція ---");
+SqlCommandCounter.Reset();
+var summaries = await repository.GetSummariesAsync();
+foreach (var s in summaries)
+{
+    Console.WriteLine($"  {s.Name}: {s.RecordsCount}");
+}
+Console.WriteLine($"  SQL-команд: {SqlCommandCounter.Count}");
+
+// === Демонстрація 3: Include ===
+Console.WriteLine("\n--- Include ---");
+SqlCommandCounter.Reset();
+var withRecords = await repository.GetDeviceWithRecordsAsync(summaries[0].Id);
+Console.WriteLine($"  '{withRecords?.Name}': показів {withRecords?.Records.Count}, SQL-команд: {SqlCommandCounter.Count}");
+
+// === Демонстрація 4: CRUD на тимчасовому пристрої ===
+Console.WriteLine("\n--- CRUD ---");
+var temp = await repository.AddDeviceAsync("temp-sensor");
+await repository.RenameDeviceAsync(temp.Id, "temp-sensor-renamed");
+Console.WriteLine($"  Видалено: {await repository.DeleteDeviceAsync(temp.Id)}");
