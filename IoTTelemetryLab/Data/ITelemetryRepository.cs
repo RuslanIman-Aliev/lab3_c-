@@ -14,4 +14,10 @@ public interface ITelemetryRepository
 
     Task<bool> RenameDeviceAsync(int id, string newName, CancellationToken ct = default);
     Task<bool> DeleteDeviceAsync(int id, CancellationToken ct = default);
+
+    // Варіант 5, завдання А: частка показів вище порога для вказаного джерела
+    Task<SourceLoudShare> GetLoudShareBySourceAsync(string source, double threshold, CancellationToken ct = default);
+
+    // Варіант 5, завдання Б: пристрій лише з показами джерела вище порога, за спаданням значення
+    Task<Device?> GetDeviceWithLoudRecordsAsync(int deviceId, string source, double threshold, CancellationToken ct = default);
 }

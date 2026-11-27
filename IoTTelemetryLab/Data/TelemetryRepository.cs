@@ -74,4 +74,23 @@ public class TelemetryRepository : ITelemetryRepository
         await _context.SaveChangesAsync(ct);
         return true;
     }
+
+    public async Task<SourceLoudShare> GetLoudShareBySourceAsync(string source, double threshold, CancellationToken ct = default)
+    {
+        var bySource = _context.Records.Where(r => r.Source == source);
+
+        var total = await bySource.CountAsync(ct);
+        var loud = await bySource.CountAsync(r => r.Value > threshold, ct);
+
+        double? percent = total == 0 ? null : 100.0 * loud / total;
+        return new SourceLoudShare(source, total, loud, percent);
+    }
+
+    public async Task<Device?> GetDeviceWithLoudRecordsAsync(int deviceId, string source, double threshold, CancellationToken ct = default)
+        => await _context.Devices
+            .Include(d => d.Records
+                .Where(r => r.Source == source && r.Value > threshold)
+                .OrderByDescending(r => r.Value))
+            .AsNoTracking()
+            .FirstOrDefaultAsync(d => d.Id == deviceId, ct);
 }

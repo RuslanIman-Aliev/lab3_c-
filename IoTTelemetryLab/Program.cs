@@ -90,3 +90,38 @@ Console.WriteLine("\n--- CRUD ---");
 var temp = await repository.AddDeviceAsync("temp-sensor");
 await repository.RenameDeviceAsync(temp.Id, "temp-sensor-renamed");
 Console.WriteLine($"  Видалено: {await repository.DeleteDeviceAsync(temp.Id)}");
+
+// === Варіант 5, завдання А: частка показів вище порога за джерелом ===
+Console.WriteLine($"\n--- Варіант 5 (А): частка показів > {settings.LoudThreshold} дБ за джерелом ---");
+foreach (var source in DeviceSeeder.Sources.Append("невідоме"))
+{
+    SqlCommandCounter.Reset();
+    var share = await repository.GetLoudShareBySourceAsync(source, settings.LoudThreshold);
+
+    var percentText = share.Percent is null ? "немає даних" : $"{share.Percent:F2} %";
+    Console.WriteLine($"  {share.Source,-12} усього: {share.Total,3}, гучних: {share.Loud,3}, частка: {percentText}, SQL-команд: {SqlCommandCounter.Count}");
+}
+
+// === Варіант 5, завдання Б: пристрій з гучними показами джерела ===
+const string LoudSource = "двигун";
+Console.WriteLine($"\n--- Варіант 5 (Б): покази джерела '{LoudSource}' > {settings.LoudThreshold} дБ за спаданням ---");
+SqlCommandCounter.Reset();
+var loudDevice = await repository.GetDeviceWithLoudRecordsAsync(summaries[0].Id, LoudSource, settings.LoudThreshold);
+
+if (loudDevice is null)
+{
+    Console.WriteLine("  Пристрій не знайдено.");
+}
+else
+{
+    Console.WriteLine($"  '{loudDevice.Name}': знайдено показів {loudDevice.Records.Count}, SQL-команд: {SqlCommandCounter.Count}");
+    foreach (var r in loudDevice.Records)
+    {
+        Console.WriteLine($"    {r.Timestamp:yyyy-MM-dd HH:mm:ss}  {r.Value,7:F2} дБ  {r.Source}");
+    }
+}
+
+// порожня вибірка: невідоме джерело та неіснуючий пристрій не дають винятку
+var emptySource = await repository.GetDeviceWithLoudRecordsAsync(summaries[0].Id, "невідоме", settings.LoudThreshold);
+var missingDevice = await repository.GetDeviceWithLoudRecordsAsync(-1, LoudSource, settings.LoudThreshold);
+Console.WriteLine($"  Невідоме джерело: показів {emptySource?.Records.Count}; неіснуючий пристрій: {(missingDevice is null ? "null" : missingDevice.Name)}");
