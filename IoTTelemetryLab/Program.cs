@@ -1,26 +1,60 @@
 using System.Text;
 using IoTTelemetryLab.Data;
+using IoTTelemetryLab.Settings;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 Console.InputEncoding = Encoding.UTF8;
 Console.OutputEncoding = Encoding.UTF8;
 
-const int ReadingCount = 50;
-const double MinValue = 30;
-const double MaxValue = 120;
+// ===== ФАЗА 1. РЕЄСТРАЦІЯ СЛУЖБ =====
 
-using var context = new AppDbContext();
-ITelemetryRepository repository = new TelemetryRepository(context);
+var builder = Host.CreateApplicationBuilder(args);
 
-await context.Database.MigrateAsync();
+// шлях до файлу бази робимо абсолютним (відносно папки з .exe)
+var csb = new SqliteConnectionStringBuilder(
+    builder.Configuration.GetConnectionString("Default")
+    ?? throw new InvalidOperationException("Не знайдено ConnectionStrings:Default в appsettings.json"));
+csb.DataSource = Path.Combine(AppContext.BaseDirectory, csb.DataSource);
+
+builder.Services.AddDbContext<AppDbContext>(options => options
+    .UseSqlite(csb.ConnectionString)
+    .LogTo(SqlCommandCounter.OnLog,
+           new[] { DbLoggerCategory.Database.Command.Name },
+           LogLevel.Information));
+
+builder.Services.AddScoped<ITelemetryRepository, TelemetryRepository>();
+
+builder.Services.Configure<TelemetrySettings>(builder.Configuration.GetSection("Telemetry"));
+
+// ===== ФАЗА 2. ПОБУДОВА =====
+
+using var host = builder.Build();
+
+// ===== ФАЗА 3. ВИКОРИСТАННЯ =====
+
+// у консольному застосунку scope створюємо вручну
+using var scope = host.Services.CreateScope();
+var services = scope.ServiceProvider;
+
+await services.GetRequiredService<AppDbContext>().Database.MigrateAsync();
+
+var repository = services.GetRequiredService<ITelemetryRepository>();
+var settings = services.GetRequiredService<IOptions<TelemetrySettings>>().Value;
 
 // === Наповнення (лише якщо база порожня) ===
 if ((await repository.GetAllDevicesAsync()).Count == 0)
 {
     foreach (var name in new[] { "sensor-07", "sensor-12", "sensor-19" })
     {
-        var saved = await DeviceSeeder.SeedAsync(repository, name, ReadingCount, MinValue, MaxValue);
-        Console.WriteLine($"Створено '{name}'. Згенеровано: {ReadingCount}, збережено: {saved}");
+        var saved = await DeviceSeeder.SeedAsync(
+            repository, name, settings.ReadingCount, settings.MinValue, settings.MaxValue);
+        Console.WriteLine($"Створено '{name}'. Згенеровано: {settings.ReadingCount}, збережено: {saved}");
     }
 }
 
