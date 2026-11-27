@@ -5,13 +5,10 @@ namespace IoTTelemetryLab.Data;
 
 public class AppDbContext : DbContext
 {
+    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
     public DbSet<Device> Devices => Set<Device>();
     public DbSet<TelemetryRecord> Records => Set<TelemetryRecord>();
-
-    protected override void OnConfiguring(DbContextOptionsBuilder options)
-    {
-        options.UseSqlite("Data Source=iot_telemetry.db");
-    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
